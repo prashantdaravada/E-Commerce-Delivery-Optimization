@@ -1,0 +1,8 @@
+streamlit
+pulp
+networkx
+osmnx
+matplotlib
+ortools
+numpy
+pandas
