@@ -217,39 +217,3 @@ if st.button("Run Optimization"):
                 st.pyplot(fig)
             else:
                 st.warning("⚠️ No feasible route found!")
-num_hubs = st.sidebar.slider("Number of Hubs", 1, 10, 3)
-
-hub_coords = []
-demands = []
-
-st.sidebar.subheader("Hub Details")
-
-for i in range(num_hubs):
-    lat = st.sidebar.number_input(f"Hub {i+1} Lat", value=19.1 + i*0.01, key=f"lat{i}")
-    lon = st.sidebar.number_input(f"Hub {i+1} Lon", value=72.8 + i*0.01, key=f"lon{i}")
-    demand = st.sidebar.number_input(f"Demand {i+1}", value=10, key=f"d{i}")
-
-    hub_coords.append((lat, lon))
-    demands.append(demand)
-
-vehicle_capacity = st.sidebar.number_input("Vehicle Capacity", value=50)
-num_vehicles = st.sidebar.slider("Number of Vehicles", 1, 5, 2)
-
-if st.button("Run Optimization"):
-    with st.spinner("Optimizing routes..."):
-        optimizer = EcommerceDeliveryOptimizer(
-            (warehouse_lat, warehouse_lon),
-            hub_coords
-        )
-
-        flow = optimizer.solve_flow_model(demands)
-        routes = optimizer.solve_vrp(demands, vehicle_capacity, num_vehicles)
-
-        st.subheader("Flow Allocation")
-        st.write(flow)
-
-        st.subheader("Routes")
-        st.write(routes)
-
-        fig = plot_routes(routes, hub_coords, (warehouse_lat, warehouse_lon))
-        st.pyplot(fig)
