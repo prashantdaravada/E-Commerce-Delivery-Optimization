@@ -3,6 +3,10 @@ pulp
 networkx
 osmnx
 matplotlib
-ortools
 numpy
-pandas
+ortools
+geopandas
+shapely
+pyproj
+rtree
+requests
