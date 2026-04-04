@@ -1,129 +1,140 @@
 import streamlit as st
-import networkx as nx
-import matplotlib.pyplot as plt
-import pandas as pd
-from networkx.algorithms import community
+import requests
+import heapq
+import time
 
-st.set_page_config(page_title="Fan Network Analysis", layout="wide")
+# -------------------------------
+# PAGE CONFIG
+# -------------------------------
+st.set_page_config(page_title="Delivery Optimizer", layout="centered")
 
-st.title("🎬 Entertainment Fan Network Analysis")
-st.write("Graph-Based Community Detection & Influencer Ranking")
+st.title("🚚 E-Commerce Delivery Optimization")
+st.write("Optimize delivery routes using real-time Google Maps data")
 
-# -----------------------------
-# FUNCTION: Analyze Graph
-# -----------------------------
-def analyze_graph(G):
+# -------------------------------
+# USER INPUT
+# -------------------------------
+api_key = st.text_input("Enter Google Maps API Key", type="password")
 
-    # Centrality Measures
-    degree = nx.degree_centrality(G)
-    betweenness = nx.betweenness_centrality(G)
-    eigenvector = nx.eigenvector_centrality(G, max_iter=1000)
+warehouse = st.text_input("Warehouse Location", "Mumbai, India")
 
-    # DataFrame
-    df = pd.DataFrame({
-        "Fan": list(degree.keys()),
-        "Degree": list(degree.values()),
-        "Betweenness": list(betweenness.values()),
-        "Eigenvector": list(eigenvector.values())
-    })
-
-    # Top influencers
-    top_degree = max(degree, key=degree.get)
-    top_between = max(betweenness, key=betweenness.get)
-    top_eigen = max(eigenvector, key=eigenvector.get)
-
-    return df, top_degree, top_between, top_eigen
-
-
-# -----------------------------
-# SCENARIO SELECTION
-# -----------------------------
-scenario = st.sidebar.selectbox(
-    "Select Network Scenario",
-    ["Clustered Network", "Star Network"]
+hubs_input = st.text_area(
+    "Enter Hub Locations (one per line)",
+    "Thane, India\nNavi Mumbai, India\nPune, India"
 )
 
-# -----------------------------
+hubs = [h.strip() for h in hubs_input.split("\n") if h.strip()]
+
+# -------------------------------
+# API FUNCTION
+# -------------------------------
+def get_distance_time(origin, destination, api_key):
+    url = "https://maps.googleapis.com/maps/api/distancematrix/json"
+
+    params = {
+        "origins": origin,
+        "destinations": destination,
+        "key": api_key,
+        "departure_time": "now"
+    }
+
+    response = requests.get(url, params=params)
+    data = response.json()
+
+    try:
+        element = data['rows'][0]['elements'][0]
+        return element['distance']['value'], element['duration']['value']
+    except:
+        return float('inf'), float('inf')
+
+# -------------------------------
 # BUILD GRAPH
-# -----------------------------
-fans = ["A","B","C","D","E","F","G","H"]
+# -------------------------------
+def build_graph(locations, api_key):
+    graph = {}
 
-if scenario == "Clustered Network":
-    G = nx.Graph()
-    edges = [("A","B"), ("A","C"), ("B","C"), ("B","D"),
-             ("C","E"), ("E","F"), ("F","G"), ("G","H"), ("F","H")]
-    title = "Clustered Fan Network"
+    progress = st.progress(0)
+    total = len(locations) * (len(locations) - 1)
+    count = 0
 
-else:
-    G = nx.Graph()
-    edges = [("A","B"), ("A","C"), ("A","D"),
-             ("A","E"), ("A","F"), ("A","G"), ("A","H")]
-    title = "Star Fan Network"
+    for origin in locations:
+        graph[origin] = {}
+        for destination in locations:
+            if origin != destination:
+                dist, time_sec = get_distance_time(
+                    locations[origin],
+                    locations[destination],
+                    api_key
+                )
+                graph[origin][destination] = time_sec
 
-G.add_nodes_from(fans)
-G.add_edges_from(edges)
+                count += 1
+                progress.progress(count / total)
+                time.sleep(0.5)
 
-# -----------------------------
-# ANALYSIS
-# -----------------------------
-df, top_degree, top_between, top_eigen = analyze_graph(G)
+    return graph
 
-# -----------------------------
-# DISPLAY RESULTS
-# -----------------------------
-st.subheader("📊 Centrality Metrics")
-st.dataframe(df)
+# -------------------------------
+# DIJKSTRA
+# -------------------------------
+def dijkstra(graph, start):
+    pq = [(0, start)]
+    distances = {node: float('inf') for node in graph}
+    distances[start] = 0
+    previous = {node: None for node in graph}
 
-col1, col2, col3 = st.columns(3)
+    while pq:
+        current_distance, current_node = heapq.heappop(pq)
 
-col1.metric("Top Degree Influencer", top_degree)
-col2.metric("Top Betweenness Influencer", top_between)
-col3.metric("Top Eigenvector Influencer", top_eigen)
+        for neighbor, weight in graph[current_node].items():
+            distance = current_distance + weight
 
-# -----------------------------
-# COMMUNITY DETECTION
-# -----------------------------
-st.subheader("👥 Community Detection (Girvan-Newman)")
+            if distance < distances[neighbor]:
+                distances[neighbor] = distance
+                previous[neighbor] = current_node
+                heapq.heappush(pq, (distance, neighbor))
 
-comp = community.girvan_newman(G)
-first_level = next(comp)
-communities = [list(c) for c in first_level]
+    return distances, previous
 
-st.write("Detected Communities:", communities)
+# -------------------------------
+# PATH
+# -------------------------------
+def get_path(previous, start, end):
+    path = []
+    while end:
+        path.insert(0, end)
+        end = previous[end]
+    return path
 
-# -----------------------------
-# GRAPH VISUALIZATION
-# -----------------------------
-st.subheader("🌐 Network Graph")
+# -------------------------------
+# RUN BUTTON
+# -------------------------------
+if st.button("Optimize Routes"):
+    if not api_key:
+        st.error("Please enter API Key")
+    else:
+        st.info("Building graph using real-time data...")
 
-fig, ax = plt.subplots()
-pos = nx.spring_layout(G)
-nx.draw(G, pos, with_labels=True, ax=ax)
-st.pyplot(fig)
+        locations = {"Warehouse": warehouse}
+        for i, hub in enumerate(hubs):
+            locations[f"Hub{i+1}"] = hub
 
-# -----------------------------
-# CENTRALITY CHART
-# -----------------------------
-st.subheader("📈 Centrality Comparison")
+        graph = build_graph(locations, api_key)
 
-fig2, ax2 = plt.subplots()
-df.set_index("Fan").plot(kind="bar", ax=ax2)
-st.pyplot(fig2)
+        st.info("Optimizing routes...")
 
-# -----------------------------
-# INSIGHTS
-# -----------------------------
-st.subheader("🧠 Insights")
+        distances, previous = dijkstra(graph, "Warehouse")
 
-if scenario == "Clustered Network":
-    st.write("""
-    - Two communities are visible.
-    - Bridge nodes have high betweenness.
-    - Network is more stable and decentralized.
-    """)
-else:
-    st.write("""
-    - One central influencer dominates.
-    - Network is highly centralized.
-    - Removing the hub disconnects the network.
-    """)
+        st.success("Optimization Complete ✅")
+
+        # -------------------------------
+        # RESULTS
+        # -------------------------------
+        for hub in locations:
+            if hub != "Warehouse":
+                path = get_path(previous, "Warehouse", hub)
+                time_minutes = distances[hub] / 60
+
+                st.subheader(f"📍 Route to {hub}")
+                st.write(" → ".join(path))
+                st.write(f"⏱ Time: {time_minutes:.2f} minutes")
